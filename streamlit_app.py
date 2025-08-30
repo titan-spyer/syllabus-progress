@@ -32,9 +32,19 @@ DARK_MODE_CSS = """
     --font: "Source Sans Pro", sans-serif;
 }
 
+/* Apply to the whole app to set background and text color */
+body, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-color);
+}
+
 /* Sidebar */
 [data-testid="stSidebar"] {
-    --background-color: #161A21;
+    background-color: var(--secondary-background-color);
 }
 
 /* Containers with border */
@@ -56,6 +66,36 @@ DARK_MODE_CSS = """
 [data-testid="stExpander"] summary {
     background-color: var(--secondary-background-color);
     border-radius: 0.5rem;
+}
+
+/* Input widgets */
+div[data-baseweb="base-input"] > input,
+div[data-baseweb="textarea"] > textarea {
+    background-color: var(--secondary-background-color);
+    -webkit-text-fill-color: var(--text-color); /* For Chrome/Safari */
+    color: var(--text-color);
+    border-color: #3c3f44;
+}
+
+/* Selectbox */
+div[data-baseweb="select"] > div {
+    background-color: var(--secondary-background-color);
+    color: var(--text-color);
+    border-color: #3c3f44;
+}
+
+/* Chat messages */
+[data-testid="stChatMessage"] {
+    background-color: var(--secondary-background-color);
+    border-radius: 0.5rem;
+}
+
+/* Fix for selectbox dropdown menu */
+div[data-baseweb="popover"] ul {
+    background-color: var(--secondary-background-color);
+}
+li[data-baseweb="menu-item"]:hover {
+    background-color: #262730;
 }
 </style>
 """
@@ -180,6 +220,70 @@ def profile_page():
 
     st.divider()
 
+    # --- Syllabus Setup Section ---
+    with st.expander("📚 Configure Your Syllabus", expanded=not st.session_state.get("upload_data")):
+        st.info("Set up your current semester and subjects here. This will prepare the 'Upload Syllabus' page.")
+
+        # Part 1: Inputs that control the form's structure (outside the form)
+        # Pre-fill with existing data if available
+        current_semester = st.session_state.get("upload_data", {}).get("semester", "Semester 1")
+        existing_subjects = st.session_state.get("upload_data", {}).get("subjects", [{}])
+        # Default to the number of existing subjects, or 1 if none exist.
+        num_subjects_value = len(existing_subjects) if existing_subjects and existing_subjects[0].get('name') else 1
+
+        semester = st.selectbox(
+            "Select Semester",
+            options=[f"Semester {i}" for i in range(1, 9)],
+            index=[f"Semester {i}" for i in range(1, 9)].index(current_semester),
+            key="syllabus_semester_selector"
+        )
+        num_subjects = st.number_input(
+            "Enter Number of Subjects",
+            min_value=1,
+            max_value=10,
+            value=num_subjects_value,
+            key="syllabus_num_subjects_input"
+        )
+
+        # Part 2: The form for entering details
+        with st.form("syllabus_details_form"):
+            subjects = []
+            st.markdown("---")
+            st.subheader("Subject Details")
+
+            # The loop now uses the value from the number_input outside the form
+            for i in range(num_subjects):
+                default_name = existing_subjects[i].get('name', "") if i < len(existing_subjects) else ""
+                default_credits = existing_subjects[i].get('credits', 3) if i < len(existing_subjects) else 3
+
+                name = st.text_input(f"Subject {i + 1} Name", value=default_name, key=f"subject_name_{i}")
+                credits = st.number_input(
+                    f"Credits for Subject {i + 1}",
+                    min_value=1, max_value=5, value=default_credits, key=f"credit_{i}"
+                )
+                subjects.append({"name": name, "credits": credits, "pdf_content": None})
+
+            # The submit button for the form
+            submitted = st.form_submit_button("Save Syllabus Structure")
+
+            if submitted:
+                if any(not s["name"].strip() for s in subjects):
+                    st.error("Please provide a name for every subject.")
+                else:
+                    # Clear old processing flags if they exist to force re-processing
+                    if "syllabus_processed" in st.session_state:
+                        del st.session_state.syllabus_processed
+                    if "progress" in st.session_state:
+                        del st.session_state.progress
+
+                    # The 'semester' value is from the selectbox outside the form
+                    st.session_state.upload_data = {
+                        "semester": semester,
+                        "subjects": subjects,
+                    }
+                    st.success("Syllabus structure saved! You can now go to the 'Upload Syllabus' page.")
+                    st.rerun()
+
     # --- Edit Profile Section ---
     with st.expander("✏️ Edit Your Profile"):
         with st.form("profile_form"):
@@ -217,108 +321,62 @@ def upload_syllabus_page():
     """
     st.title("📄 Upload Syllabus")
 
-    # Check if the initial syllabus info has been submitted
-    if "upload_data" not in st.session_state:
-        st.header("Step 1: Enter Syllabus Details")
-        # Use a form to group inputs and have a single submit button
-        with st.form("syllabus_details_form"):
-            semester = st.selectbox(
-                "Select Semester", options=[f"Semester {i}" for i in range(1, 9)]
-            )
-            num_subjects = st.number_input(
-                "Enter Number of Subjects", min_value=1, max_value=6, value=1
-            )
-
-            subjects = []
-            for i in range(num_subjects):
-                st.markdown("---")
-                name = st.text_input(f"Subject {i + 1} Name", key=f"subject_name_{i}")
-                credits = st.number_input(
-                    f"Credits for Subject {i + 1}",
-                    min_value=1,
-                    max_value=5,
-                    value=3,
-                    key=f"credit_{i}",
-                )
-                subjects.append({"name": name, "credits": credits, "pdf_content": None})
-
-            submitted = st.form_submit_button("Next: Upload PDFs")
-
-            if submitted:
-                # A simple validation to ensure names are entered
-                if any(not s["name"].strip() for s in subjects):
-                    st.error("Please provide a name for every subject.")
-                else:
-                    st.session_state.upload_data = {
-                        "semester": semester,
-                        "subjects": subjects,
-                    }
-                    st.rerun()  # Rerun to show the next step
-    else:
-        # This block runs after the user has submitted the details
-        st.header("Step 2: Upload PDF for each subject")
-
-        upload_data = st.session_state.upload_data
-
-        # Defensive check for old data structure from previous runs
-        if "subjects" not in upload_data:
-            st.warning("It looks like your saved data is from an older version. Clearing it now.")
-            del st.session_state.upload_data
+    # Check if the syllabus structure has been defined in the profile page
+    if "upload_data" not in st.session_state or "subjects" not in st.session_state.upload_data:
+        st.warning("Please configure your semester and subjects in the 'Profile' page first.")
+        if st.button("Go to Profile Page"):
+            st.session_state.page_to_navigate = "Profile"
             st.rerun()
-            
-        st.info(
-            f"Now, please upload the syllabus PDF for each of the {len(upload_data['subjects'])} subjects in {upload_data['semester']}."
+        return
+
+    upload_data = st.session_state.upload_data
+    st.info(
+        f"Please upload the syllabus PDF for each of the {len(upload_data['subjects'])} subjects in {upload_data['semester']}."
+    )
+
+    # Create a list to hold the uploaded file objects
+    uploaded_files = []
+    for i, subject in enumerate(upload_data["subjects"]):
+        st.subheader(f"Upload for: {subject['name']} ({subject['credits']} credits)")
+        uploaded_file = st.file_uploader(
+            f"Syllabus for {subject['name']}", type="pdf", key=f"uploader_{i}"
         )
+        uploaded_files.append(uploaded_file)
 
-        # Create a list to hold the uploaded file objects
-        uploaded_files = []
-        for i, subject in enumerate(upload_data["subjects"]):
-            st.subheader(f"Upload for: {subject['name']} ({subject['credits']} credits)")
-            uploaded_file = st.file_uploader(
-                f"Syllabus for {subject['name']}", type="pdf", key=f"uploader_{i}"
-            )
-            uploaded_files.append(uploaded_file)
+    st.divider()
 
-        st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Go Back and Edit Details"):
+            # Navigate back to the profile page to edit details
+            st.session_state.page_to_navigate = "Profile"
+            st.rerun()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("⬅️ Go Back and Edit Details"):
-                # Clear the uploaded data to return to step 1
-                del st.session_state.upload_data
-                # Also clear any processed flag if it exists
-                if "syllabus_processed" in st.session_state:
-                    del st.session_state.syllabus_processed
-                # Clear progress data as well
-                if "progress" in st.session_state:
-                    del st.session_state.progress
+    with col2:
+        if st.button("✅ Finish & Process Syllabus"):
+            # Check if a file has been uploaded for every subject
+            if any(file is None for file in uploaded_files):
+                st.error("Please upload a PDF for every subject before proceeding.")
+            else:
+                with st.spinner("Processing PDFs... This may take a moment."):
+                    for i, file in enumerate(uploaded_files):
+                        # Move file pointer to the beginning before reading
+                        file.seek(0)
+                        pdf_reader = PdfReader(file)
+                        text = ""
+                        for page in pdf_reader.pages:
+                            text += page.extract_text() or ""
+                        # Store the extracted text in the session state
+                        st.session_state.upload_data["subjects"][i][
+                            "pdf_content"
+                        ] = text
+
+                # Set a flag to indicate processing is complete
+                st.session_state.syllabus_processed = True
+                st.success("All syllabuses have been processed successfully!")
+                # Set the next page to navigate to and rerun.
+                st.session_state.page_to_navigate = "Track Progress"
                 st.rerun()
-
-        with col2:
-            if st.button("✅ Finish & Process Syllabus"):
-                # Check if a file has been uploaded for every subject
-                if any(file is None for file in uploaded_files):
-                    st.error("Please upload a PDF for every subject before proceeding.")
-                else:
-                    with st.spinner("Processing PDFs... This may take a moment."):
-                        for i, file in enumerate(uploaded_files):
-                            # Move file pointer to the beginning before reading
-                            file.seek(0)
-                            pdf_reader = PdfReader(file)
-                            text = ""
-                            for page in pdf_reader.pages:
-                                text += page.extract_text() or ""
-                            # Store the extracted text in the session state
-                            st.session_state.upload_data["subjects"][i][
-                                "pdf_content"
-                            ] = text
-
-                    # Set a flag to indicate processing is complete
-                    st.session_state.syllabus_processed = True
-                    st.success("All syllabuses have been processed successfully!")
-                    # Set the next page to navigate to and rerun.
-                    st.session_state.page_to_navigate = "Track Progress"
-                    st.rerun()
 
 
 def get_modules_from_syllabus(syllabus_text: str) -> list[str]:
@@ -739,9 +797,9 @@ def dashboard_page():
 
     # Check if syllabus has been processed
     if not ("syllabus_processed" in st.session_state and st.session_state.syllabus_processed):
-        st.info("Welcome! Please upload a syllabus to get started.")
-        if st.button("Go to Upload Page"):
-            st.session_state.page_to_navigate = "Upload Syllabus"
+        st.info("Welcome! Please set up your profile and syllabus to get started.")
+        if st.button("Go to Profile Page"):
+            st.session_state.page_to_navigate = "Profile"
             st.rerun()
         return
 
