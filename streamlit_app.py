@@ -12,14 +12,6 @@ import streamlit as st
 from pypdf import PdfReader
 import google.generativeai as genai
 
-# from langchain.text_splitter import CharacterTextSplitter
-# from langchain_google_genai import GoogleGenerativeAIEmbeddings
-# from langchain_google_genai import GoogleGenerativeAI
-# from langchain_community.vectorstores import FAISS
-# from langchain.chains.conversational_retrieval.base import ConversationalRetrievalChain
-# from langchain.memory import ConversationBufferMemory
-# from langchain.prompts import PromptTemplate
-
 # --- Theme Configuration ---
 
 DARK_MODE_CSS = """
@@ -969,8 +961,8 @@ def main():
 
     # --- Theme Toggle ---
     st.sidebar.header("Display Options")
-    # Default to True for dark mode
-    dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=True, key="dark_mode")
+    # Default to False for light mode
+    dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=False, key="dark_mode")
 
     css = DARK_MODE_CSS if dark_mode else LIGHT_MODE_CSS
     st.markdown(css, unsafe_allow_html=True)
